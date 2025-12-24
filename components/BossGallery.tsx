@@ -7,10 +7,15 @@ const galleryImages = [
   { src: '/boss-cyber.jpg', alt: 'Cybernetic Boss Bull' },
   { src: '/boss-throne.jpg', alt: 'Boss on the Throne' },
   { src: '/boss-vs-bear.jpg', alt: 'Boss vs The Bear' },
+  { src: '/boss-rocket.jpg', alt: 'Boss Solana Rocket' },
   { src: '/boss-spartan.jpg', alt: 'Spartan Boss' },
   { src: '/boss-lambo.jpg', alt: 'Boss in a Lambo' },
   { src: '/boss-poolside.jpg', alt: 'Boss Poolside' },
   { src: '/boss-jet.jpg', alt: 'Boss Solana Jet' },
+  { src: '/boss-pool-drink.jpg', alt: 'Boss Solana Pool' },
+  { src: '/boss-soldier.jpg', alt: 'Boss Solana Soldier' },
+  { src: '/boss-jet.jpg', alt: 'Boss Solana Jet' },
+  { src: '/boss-santa.jpg', alt: 'Boss Solana Santa' },
 ];
 
 export default function BossGallery() {
