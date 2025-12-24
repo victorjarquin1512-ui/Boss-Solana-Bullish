@@ -12,7 +12,6 @@ export default function BossGame() {
   const [mode, setMode] = useState<GameMode>('EASY');
   const [isMuted, setIsMuted] = useState(false);
 
-  // AUDIO REFS
   const jumpSound = useRef<HTMLAudioElement | null>(null);
   const deathSound = useRef<HTMLAudioElement | null>(null);
   const bgMusic = useRef<HTMLAudioElement | null>(null);
@@ -20,8 +19,9 @@ export default function BossGame() {
   const scoreRef = useRef(0);
   const obstaclesRef = useRef<any[]>([]);
   const frameCountRef = useRef(0);
+  const bossImgRef = useRef<HTMLImageElement | null>(null);
 
-  // Initialize Audio
+  // Initialize Audio and Image
   useEffect(() => {
     jumpSound.current = new Audio('/jump.mp3');
     deathSound.current = new Audio('/death.mp3');
@@ -31,16 +31,19 @@ export default function BossGame() {
       bgMusic.current.loop = true;
       bgMusic.current.volume = isMuted ? 0 : 0.15;
     }
+
+    // Preload Boss Icon
+    const img = new Image();
+    img.src = '/boss-icon.png';
+    img.onload = () => { bossImgRef.current = img; };
   }, []);
 
-  // Update Volumes when Mute changes
   useEffect(() => {
     if (bgMusic.current) bgMusic.current.volume = isMuted ? 0 : 0.15;
     if (jumpSound.current) jumpSound.current.volume = isMuted ? 0 : 0.3;
     if (deathSound.current) deathSound.current.volume = isMuted ? 0 : 0.4;
   }, [isMuted]);
 
-  // Handle Music Start/Stop
   useEffect(() => {
     if (gameStarted && !gameOver) {
       bgMusic.current?.play().catch(() => {});
@@ -62,9 +65,6 @@ export default function BossGame() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const bossImg = new Image();
-    bossImg.src = '/boss-icon.png'; 
-
     let animationFrameId: number;
     let gridOffset = 0;
     
@@ -84,12 +84,10 @@ export default function BossGame() {
       }
     };
 
+    // FIXED TOUCH HANDLER: Prevents "Double Event" surge
     const handleTouch = (e: TouchEvent) => {
-      if (e.target === canvas) {
-        if (e.cancelable) e.preventDefault();
-        e.stopPropagation();
-        performJump();
-      }
+      if (e.cancelable) e.preventDefault(); // Stop browser from firing 'mousedown'
+      performJump();
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -100,11 +98,12 @@ export default function BossGame() {
     };
 
     const handleMouseDown = (e: MouseEvent) => {
+      // Only fire if it's a real mouse click (not a simulated touch)
       if (e.button === 0) performJump();
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('touchstart', handleTouch, { passive: false });
 
     const drawBear = (obs: any) => {
@@ -128,7 +127,6 @@ export default function BossGame() {
     };
 
     const update = () => {
-      frameCountRef.current++;
       const threshold = mode === 'EASY' ? 80 : 40;
       const difficultyScore = Math.max(0, scoreRef.current - threshold);
       const baseSpeed = mode === 'EASY' ? 5.5 : 7.0;
@@ -188,7 +186,16 @@ export default function BossGame() {
       ctx.strokeStyle = mode === 'HARD' ? '#ff4d4d' : '#14F195';
       ctx.lineWidth = 4;
       ctx.beginPath(); ctx.moveTo(0, canvas.height - 20); ctx.lineTo(canvas.width, canvas.height - 20); ctx.stroke();
-      if (bossImg.complete) ctx.drawImage(bossImg, boss.x, boss.y, boss.width, boss.height);
+      
+      // FIXED IMAGE DRAWING
+      if (bossImgRef.current) {
+        ctx.drawImage(bossImgRef.current, boss.x, boss.y, boss.width, boss.height);
+      } else {
+        // Fallback if image still hasn't loaded
+        ctx.fillStyle = '#14F195';
+        ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+      }
+
       obstaclesRef.current.forEach(obs => {
         if (obs.type === 'candle') {
           ctx.fillStyle = mode === 'HARD' ? '#ff1a1a' : '#ff4d4d';
@@ -204,7 +211,7 @@ export default function BossGame() {
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('mousedown', handleMouseDown);
+      canvas.removeEventListener('mousedown', handleMouseDown);
       canvas.removeEventListener('touchstart', handleTouch);
     };
   }, [gameStarted, gameOver, mode]);
@@ -218,40 +225,28 @@ export default function BossGame() {
       </div>
       
       <div className="relative w-full overflow-hidden bg-black rounded-2xl border border-white/10 shadow-2xl">
-        <canvas ref={canvasRef} width={800} height={300} className="w-full h-auto cursor-pointer touch-none" style={{ touchAction: 'none' }} />
+        <canvas ref={canvasRef} width={800} height={300} className="w-full h-auto cursor-pointer" style={{ touchAction: 'none' }} />
         
-        {/* MUTE BUTTON */}
-        <button 
-          onPointerDown={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }}
-          className="absolute top-4 right-4 z-[150] p-2 bg-black/60 rounded-lg border border-white/10 text-white/70 hover:text-white transition-colors"
-        >
-          {isMuted ? (
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9l-5 5H2v-6h2l5-5z"></path><path d="M16 9.44a4 4 0 0 1 0 5.12"></path></svg>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
-          )}
+        <button onPointerDown={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }} className="absolute top-4 right-4 z-[150] p-2 bg-black/60 rounded-lg border border-white/10 text-white/70">
+          {isMuted ? "MUTED" : "SOUND ON"}
         </button>
 
         {!gameStarted && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-[100] p-6">
-            <div className="flex flex-row gap-4 mb-8 bg-zinc-800/80 p-2 rounded-2xl border border-white/10 relative z-[110]">
-              <button onPointerDown={(e) => { e.stopPropagation(); setMode('EASY'); }} className={`px-6 py-3 rounded-xl font-black transition-all ${mode === 'EASY' ? 'bg-[#14F195] text-black' : 'text-white/40'}`}>EASY</button>
-              <button onPointerDown={(e) => { e.stopPropagation(); setMode('HARD'); }} className={`px-6 py-3 rounded-xl font-black transition-all ${mode === 'HARD' ? 'bg-red-600 text-white' : 'text-white/40'}`}>HARD</button>
+            <div className="flex flex-row gap-4 mb-8">
+              <button onPointerDown={(e) => { e.stopPropagation(); setMode('EASY'); }} className={`px-6 py-3 rounded-xl font-black ${mode === 'EASY' ? 'bg-[#14F195] text-black' : 'text-white/40'}`}>EASY</button>
+              <button onPointerDown={(e) => { e.stopPropagation(); setMode('HARD'); }} className={`px-6 py-3 rounded-xl font-black ${mode === 'HARD' ? 'bg-red-600 text-white' : 'text-white/40'}`}>HARD</button>
             </div>
-            <button onPointerDown={(e) => { e.stopPropagation(); setGameStarted(true); }} className={`px-12 py-5 rounded-xl font-black text-2xl active:scale-95 transition-all relative z-[110] ${mode === 'HARD' ? 'bg-red-600 text-white shadow-[0_0_30px_rgba(220,38,38,0.5)]' : 'bg-[#14F195] text-black shadow-[0_0_30px_rgba(20,241,149,0.5)]'}`}>START MISSION</button>
+            <button onPointerDown={(e) => { e.stopPropagation(); setGameStarted(true); }} className="px-12 py-5 rounded-xl font-black text-2xl bg-[#14F195] text-black">START MISSION</button>
           </div>
         )}
 
         {gameOver && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-[120] p-6 text-center">
-            <h4 className={`font-black text-4xl md:text-6xl mb-4 italic uppercase tracking-tighter ${mode === 'HARD' ? 'text-red-600' : 'text-white'}`}>REKT</h4>
-            <div className="mb-8 text-white font-bold italic uppercase tracking-widest text-sm">
-              <p>{mode} Score: {displayScore}M</p>
-              <p className="text-[#14F195] text-xs mt-1">Best: {highScore}M</p>
-            </div>
-            <div className="flex flex-col md:flex-row gap-4 relative z-[130]">
-              <button onPointerDown={(e) => { e.stopPropagation(); scoreRef.current = 0; obstaclesRef.current = []; setGameOver(false); setDisplayScore(0); }} className="bg-white text-black px-12 py-4 rounded-xl font-black uppercase transition-all">Retry</button>
-              <button onPointerDown={(e) => { e.stopPropagation(); scoreRef.current = 0; obstaclesRef.current = []; setGameOver(false); setGameStarted(false); setDisplayScore(0); }} className="bg-zinc-700 text-white px-12 py-4 rounded-xl font-black uppercase transition-all">Menu</button>
+            <h4 className={`font-black text-4xl mb-4 ${mode === 'HARD' ? 'text-red-600' : 'text-white'}`}>REKT</h4>
+            <div className="flex flex-col gap-4">
+              <button onPointerDown={(e) => { e.stopPropagation(); scoreRef.current = 0; obstaclesRef.current = []; setGameOver(false); setDisplayScore(0); }} className="bg-white text-black px-12 py-4 rounded-xl font-black uppercase">Retry</button>
+              <button onPointerDown={(e) => { e.stopPropagation(); scoreRef.current = 0; obstaclesRef.current = []; setGameOver(false); setGameStarted(false); setDisplayScore(0); }} className="bg-zinc-700 text-white px-12 py-4 rounded-xl font-black uppercase">Menu</button>
             </div>
           </div>
         )}
