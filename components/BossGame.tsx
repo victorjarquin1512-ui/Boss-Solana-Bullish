@@ -1,23 +1,26 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 
+type GameMode = 'EASY' | 'HARD';
+
 export default function BossGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOver, setGameOver] = useState(false);
   const [displayScore, setDisplayScore] = useState(0);
   const [highScore, setHighScore] = useState(0);
+  const [mode, setMode] = useState<GameMode>('EASY');
 
-  // Refs handle the core engine to prevent React re-render flickering
+  // Engine Refs for smooth performance
   const scoreRef = useRef(0);
   const obstaclesRef = useRef<any[]>([]);
   const frameCountRef = useRef(0);
 
-  // Load High Score on Mount
+  // Load High Scores
   useEffect(() => {
-    const saved = localStorage.getItem('boss_high_score');
-    if (saved) setHighScore(parseInt(saved));
-  }, []);
+    const saved = localStorage.getItem(`boss_high_score_${mode}`);
+    setHighScore(saved ? parseInt(saved) : 0);
+  }, [mode, gameOver]);
 
   useEffect(() => {
     if (!gameStarted || gameOver) return;
@@ -33,7 +36,6 @@ export default function BossGame() {
     let animationFrameId: number;
     let gridOffset = 0;
     
-    // Physics Constants
     const boss = { 
       x: 50, y: 150, width: 48, height: 48, 
       dy: 0, jumpForce: -14.2, gravity: 0.8, grounded: false 
@@ -58,7 +60,14 @@ export default function BossGame() {
       performJump();
     };
 
+    // MOUSE SUPPORT
+    const handleMouseDown = (e: MouseEvent) => {
+      // Prevent jumping when clicking UI buttons
+      if (e.button === 0) performJump();
+    };
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('touchstart', handleTouch, { passive: false });
 
     const drawBear = (obs: any) => {
@@ -84,13 +93,16 @@ export default function BossGame() {
     const update = () => {
       frameCountRef.current++;
 
-      // LOGARITHMIC DIFFICULTY SCALING
-      // The game gets harder slower as the score increases
-      const speedBonus = Math.sqrt(scoreRef.current) * 0.5; 
-      const currentSpeed = 6 + speedBonus; 
-      const currentGravity = 0.8 + (scoreRef.current * 0.005);
+      // STAGED DIFFICULTY LOGIC (Plateaus: 80 for Easy, 40 for Hard)
+      const threshold = mode === 'EASY' ? 80 : 40;
+      const difficultyScore = Math.max(0, scoreRef.current - threshold);
+      
+      const baseSpeed = mode === 'EASY' ? 5.5 : 7.0;
+      const speedMultiplier = mode === 'EASY' ? 0.25 : 0.4;
+      
+      const currentSpeed = baseSpeed + (Math.sqrt(difficultyScore) * speedMultiplier);
+      const currentGravity = 0.8 + (difficultyScore * (mode === 'EASY' ? 0.001 : 0.003));
 
-      // Boss Physics
       boss.dy += currentGravity;
       boss.y += boss.dy;
       if (boss.y + boss.height > canvas.height - 20) {
@@ -98,15 +110,16 @@ export default function BossGame() {
         boss.dy = 0; boss.grounded = true;
       }
 
-      // Adaptive Spawning
-      const minDistance = Math.max(180, 450 - (scoreRef.current * 5));
+      // SPACING LOGIC (Hard mode spreads out as speed increases)
+      const minDistance = mode === 'EASY' 
+        ? Math.max(260, 550 - (difficultyScore * 2)) 
+        : Math.max(285, 500 - (difficultyScore * 1.5));
+
       const lastObs = obstaclesRef.current[obstaclesRef.current.length - 1];
       
       if (!lastObs || (canvas.width - lastObs.x) > minDistance) {
         const type = Math.random() > 0.4 ? 'candle' : 'bear';
-        const sizeRoll = Math.random();
-        const sizeMult = sizeRoll > 0.92 ? 1.3 : sizeRoll > 0.4 ? 1.0 : 0.7;
-
+        const sizeMult = Math.random() > 0.92 ? 1.2 : Math.random() > 0.4 ? 1.0 : 0.7;
         obstaclesRef.current.push({ 
           x: canvas.width, 
           y: canvas.height - (type === 'candle' ? (60 * sizeMult + 20) : (30 * sizeMult + 20)), 
@@ -115,7 +128,6 @@ export default function BossGame() {
         });
       }
 
-      // Movement & Collision
       for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
         const obs = obstaclesRef.current[i];
         obs.x -= currentSpeed;
@@ -126,9 +138,9 @@ export default function BossGame() {
             boss.y + boss.height - 12 > obs.y + 12) {
           
           const finalScore = scoreRef.current;
-          const currentHigh = parseInt(localStorage.getItem('boss_high_score') || '0');
+          const currentHigh = parseInt(localStorage.getItem(`boss_high_score_${mode}`) || '0');
           if (finalScore > currentHigh) {
-            localStorage.setItem('boss_high_score', finalScore.toString());
+            localStorage.setItem(`boss_high_score_${mode}`, finalScore.toString());
             setHighScore(finalScore);
           }
           setGameOver(true);
@@ -142,18 +154,16 @@ export default function BossGame() {
         }
       }
 
-      // Render Batch
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#050505';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, canvas.width, canvas.height);
       
       gridOffset = (gridOffset + currentSpeed) % 40;
-      ctx.strokeStyle = scoreRef.current > 15 ? 'rgba(255, 0, 0, 0.2)' : 'rgba(20, 241, 149, 0.2)';
+      ctx.strokeStyle = mode === 'HARD' ? 'rgba(255, 0, 0, 0.2)' : 'rgba(20, 241, 149, 0.2)';
       for (let i = 0; i < canvas.width + 40; i += 40) {
         ctx.beginPath(); ctx.moveTo(i - gridOffset, 0); ctx.lineTo(i - gridOffset, canvas.height); ctx.stroke();
       }
 
-      ctx.strokeStyle = scoreRef.current > 15 ? '#ff4d4d' : '#14F195';
+      ctx.strokeStyle = mode === 'HARD' ? '#ff4d4d' : '#14F195';
       ctx.lineWidth = 4;
       ctx.beginPath(); ctx.moveTo(0, canvas.height - 20); ctx.lineTo(canvas.width, canvas.height - 20); ctx.stroke();
 
@@ -161,7 +171,7 @@ export default function BossGame() {
 
       obstaclesRef.current.forEach(obs => {
         if (obs.type === 'candle') {
-          ctx.fillStyle = '#ff4d4d';
+          ctx.fillStyle = mode === 'HARD' ? '#ff1a1a' : '#ff4d4d';
           const wickH = obs.height * 0.4;
           ctx.fillRect(obs.x + (obs.width / 2) - 1, obs.y - wickH, 2, obs.height + (wickH * 2));
           ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
@@ -177,64 +187,61 @@ export default function BossGame() {
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('mousedown', handleMouseDown);
       canvas.removeEventListener('touchstart', handleTouch);
     };
-  }, [gameStarted, gameOver]);
-
-  const shareOnX = () => {
-    const text = encodeURIComponent(`Survived to ${displayScore}M MCAP on $BOSS! 🐂🚀 High Score: ${highScore}M. Play here:`);
-    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
-  };
+  }, [gameStarted, gameOver, mode]);
 
   return (
-    <div className="flex flex-col items-center justify-center p-6 bg-zinc-900/40 rounded-3xl border border-[#14F195]/20 my-20 max-w-4xl mx-auto backdrop-blur-xl touch-none select-none">
+    <div className="flex flex-col items-center justify-center p-4 bg-zinc-900/40 rounded-3xl border border-[#14F195]/20 my-10 max-w-4xl mx-auto backdrop-blur-xl touch-none select-none overflow-hidden">
       <div className="text-center mb-6">
-        <h2 className={`text-2xl md:text-4xl font-black italic uppercase tracking-tighter transition-colors ${displayScore > 15 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
-          $BOSS <span className={displayScore > 15 ? 'text-white' : 'text-[#14F195]'}>VOLATILITY RUN</span>
+        <h2 className="text-2xl md:text-4xl font-black italic uppercase tracking-tighter text-white">
+          $BOSS <span className={mode === 'HARD' ? 'text-red-500 animate-pulse' : 'text-[#14F195]'}>{mode} MODE</span>
         </h2>
       </div>
       
       <div className="relative w-full overflow-hidden bg-black rounded-2xl border border-white/10 shadow-2xl">
-        <canvas ref={canvasRef} width={800} height={300} className="w-full h-auto cursor-pointer" />
+        <canvas ref={canvasRef} width={800} height={300} className="w-full h-auto cursor-pointer" style={{ touchAction: 'none' }} />
         
         {!gameStarted && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-20">
-            <button onClick={() => setGameStarted(true)} className="bg-[#14F195] text-black px-12 py-4 rounded-xl font-black text-xl active:scale-95 transition-all shadow-[0_0_20px_rgba(20,241,149,0.3)]">
-              START GAME
-            </button>
-            <p className="text-white/40 text-[10px] mt-4 uppercase font-bold tracking-widest">Personal Best: {highScore}M</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-20 p-6">
+            <div className="flex gap-4 mb-8 bg-zinc-800/50 p-2 rounded-2xl border border-white/5">
+              <button 
+                onClick={(e) => { e.stopPropagation(); setMode('EASY'); }} 
+                className={`px-6 py-2 rounded-xl font-black transition-all ${mode === 'EASY' ? 'bg-[#14F195] text-black shadow-[0_0_15px_rgba(20,241,149,0.4)]' : 'text-white/40'}`}
+              >EASY</button>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setMode('HARD'); }} 
+                className={`px-6 py-2 rounded-xl font-black transition-all ${mode === 'HARD' ? 'bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]' : 'text-white/40'}`}
+              >HARD</button>
+            </div>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setGameStarted(true); }} 
+              className={`px-12 py-4 rounded-xl font-black text-xl active:scale-95 transition-all ${mode === 'HARD' ? 'bg-red-600 text-white' : 'bg-[#14F195] text-black'}`}
+            >START</button>
+            <p className="text-white/30 text-[10px] mt-6 uppercase font-bold tracking-[0.2em]">{mode} Record: {highScore}M</p>
           </div>
         )}
 
         {gameOver && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-30 p-6 text-center">
-            <h4 className="text-red-600 font-black text-4xl md:text-6xl mb-2 italic uppercase">Liquidated</h4>
-            <div className="mb-8">
-              <p className="text-white font-bold text-lg italic uppercase tracking-wider">Score: {displayScore}M</p>
-              <p className="text-[#14F195] text-xs font-bold uppercase tracking-widest mt-1">Best: {highScore}M</p>
+            <h4 className={`font-black text-4xl md:text-6xl mb-2 italic uppercase tracking-tighter ${mode === 'HARD' ? 'text-red-600' : 'text-white'}`}>REKT</h4>
+            <div className="mb-8 text-white font-bold italic uppercase tracking-widest text-sm">
+              <p>{mode} Score: {displayScore}M</p>
+              <p className="text-[#14F195] text-xs mt-1">Best: {highScore}M</p>
             </div>
-            
-            <div className="flex flex-col md:flex-row justify-center gap-4 w-full px-10">
-              <button onClick={() => { 
-                scoreRef.current = 0;
-                obstaclesRef.current = [];
-                setGameOver(false); 
-                setDisplayScore(0); 
-              }} className="bg-white text-black px-10 py-3 rounded-lg font-black uppercase hover:bg-[#14F195] transition-all">
-                Try Again
-              </button>
-              <button onClick={shareOnX} className="bg-[#1DA1F2] text-white px-10 py-3 rounded-lg font-black uppercase flex items-center justify-center gap-2">
-                Share Score
-              </button>
+            <div className="flex flex-col md:flex-row gap-4">
+              <button onClick={(e) => { e.stopPropagation(); scoreRef.current = 0; obstaclesRef.current = []; setGameOver(false); setDisplayScore(0); }} className="bg-white text-black px-10 py-3 rounded-lg font-black uppercase hover:bg-[#14F195] transition-all">Retry</button>
+              <button onClick={(e) => { e.stopPropagation(); scoreRef.current = 0; obstaclesRef.current = []; setGameOver(false); setGameStarted(false); setDisplayScore(0); }} className="bg-zinc-700 text-white px-10 py-3 rounded-lg font-black uppercase hover:bg-zinc-600">Menu</button>
             </div>
           </div>
         )}
         
-        <div className="absolute top-4 left-4 bg-black/80 px-3 py-1 rounded-lg border border-[#14F195]/30">
-          <span className="text-[#14F195] font-mono text-xl font-bold">{displayScore}M</span>
+        <div className="absolute top-4 left-4 bg-black/80 px-3 py-1 rounded-lg border border-white/10 pointer-events-none">
+          <span className={`${mode === 'HARD' ? 'text-red-500' : 'text-[#14F195]'} font-mono text-xl font-bold`}>{displayScore}M</span>
         </div>
       </div>
-      <p className="text-zinc-500 text-[10px] uppercase font-bold mt-4 tracking-widest opacity-50">Space or Tap to Jump</p>
+      <p className="text-zinc-500 text-[10px] uppercase font-bold mt-4 tracking-widest opacity-40 italic">Space, Click, or Tap to Jump</p>
     </div>
   );
 }
