@@ -59,7 +59,7 @@ export default function CommunityCTA() {
           </a>
           
           <a 
-            href="https://t.me/your_telegram_here" 
+            href="https://t.me/Boss_Solana_Bull_Official" 
             target="_blank" 
             rel="noopener noreferrer"
             className="flex items-center gap-3 bg-[#229ED9] text-white px-10 py-5 rounded-2xl font-black text-lg hover:scale-105 transition-all transform hover:-translate-y-1"
