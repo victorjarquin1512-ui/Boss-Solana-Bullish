@@ -12,13 +12,18 @@ export default function BossGame() {
   const [mode, setMode] = useState<GameMode>('EASY');
   const [isMuted, setIsMuted] = useState(false);
 
+  // Refs for Game Engine
   const scoreRef = useRef(0);
   const obstaclesRef = useRef<any[]>([]);
   const bossImgRef = useRef<HTMLImageElement | null>(null);
   const jumpSound = useRef<HTMLAudioElement | null>(null);
   const deathSound = useRef<HTMLAudioElement | null>(null);
   const bgMusic = useRef<HTMLAudioElement | null>(null);
+  
+  // THE FIX: Input Flag
+  const jumpRequested = useRef(false);
 
+  // Initialize Assets
   useEffect(() => {
     const img = new Image();
     img.src = '/boss-icon.png';
@@ -34,6 +39,7 @@ export default function BossGame() {
     }
   }, []);
 
+  // Sync Volume
   useEffect(() => {
     if (bgMusic.current) bgMusic.current.volume = isMuted ? 0 : 0.15;
     if (jumpSound.current) jumpSound.current.volume = isMuted ? 0 : 0.3;
@@ -50,11 +56,6 @@ export default function BossGame() {
   }, [gameStarted, gameOver]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(`boss_high_score_${mode}`);
-    setHighScore(saved ? parseInt(saved) : 0);
-  }, [mode, gameOver]);
-
-  useEffect(() => {
     if (!gameStarted || gameOver) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -69,33 +70,22 @@ export default function BossGame() {
       dy: 0, jumpForce: -14.2, gravity: 0.8, grounded: false 
     };
 
-    const performJump = () => {
-      if (boss.grounded) {
-        boss.dy = boss.jumpForce;
-        boss.grounded = false;
-        if (jumpSound.current) {
-          jumpSound.current.currentTime = 0;
-          jumpSound.current.play().catch(() => {});
-        }
-      }
-    };
-
-    // --- CRITICAL MOBILE FIX: UNIFIED INPUT ---
-    const handleInput = (e: any) => {
-      // Prevents the browser from firing multiple events (Touch + Click)
+    // --- INPUT HANDLING ---
+    const handleInput = (e: Event) => {
+      // This stops the "double-fire" surge by killing the event immediately
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
-      performJump();
+      jumpRequested.current = true;
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'ArrowUp') {
         e.preventDefault(); 
-        performJump();
+        jumpRequested.current = true;
       }
     };
 
-    // We add listeners directly to the window/canvas and use preventDefault
+    // Attach listeners to canvas for touch/mouse and window for keys
     window.addEventListener('keydown', handleKeyDown);
     canvas.addEventListener('touchstart', handleInput, { passive: false });
     canvas.addEventListener('mousedown', handleInput);
@@ -121,6 +111,20 @@ export default function BossGame() {
     };
 
     const update = () => {
+      // 1. PROCESS JUMP REQUEST (Limit to 1 jump per frame)
+      if (jumpRequested.current) {
+        if (boss.grounded) {
+          boss.dy = boss.jumpForce;
+          boss.grounded = false;
+          if (jumpSound.current) {
+            jumpSound.current.currentTime = 0;
+            jumpSound.current.play().catch(() => {});
+          }
+        }
+        jumpRequested.current = false; // Reset the flag
+      }
+
+      // 2. PHYSICS
       const threshold = mode === 'EASY' ? 80 : 40;
       const difficultyScore = Math.max(0, scoreRef.current - threshold);
       const baseSpeed = mode === 'EASY' ? 5.5 : 7.0;
@@ -134,7 +138,8 @@ export default function BossGame() {
         boss.dy = 0; boss.grounded = true;
       }
 
-      const minDistance = mode === 'EASY' ? 280 : 310;
+      // 3. OBSTACLES
+      const minDistance = mode === 'EASY' ? 285 : 320;
       const lastObs = obstaclesRef.current[obstaclesRef.current.length - 1];
       if (!lastObs || (canvas.width - lastObs.x) > minDistance) {
         const type = Math.random() > 0.4 ? 'candle' : 'bear';
@@ -150,11 +155,13 @@ export default function BossGame() {
       for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
         const obs = obstaclesRef.current[i];
         obs.x -= currentSpeed;
+        
+        // Precise Hitbox
         if (
-          boss.x + 6 < obs.x + obs.width - 4 &&
-          boss.x + boss.width - 6 > obs.x + 4 &&
-          boss.y + 6 < obs.y + obs.height - 4 &&
-          boss.y + boss.height - 6 > obs.y + 4
+          boss.x + 8 < obs.x + obs.width - 6 &&
+          boss.x + boss.width - 8 > obs.x + 6 &&
+          boss.y + 8 < obs.y + obs.height - 6 &&
+          boss.y + boss.height - 8 > obs.y + 6
         ) {
           if (deathSound.current) deathSound.current.play().catch(() => {});
           setGameOver(true);
@@ -167,6 +174,7 @@ export default function BossGame() {
         }
       }
 
+      // 4. DRAWING
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, canvas.width, canvas.height);
       gridOffset = (gridOffset + currentSpeed) % 40;
@@ -180,9 +188,6 @@ export default function BossGame() {
       
       if (bossImgRef.current) {
         ctx.drawImage(bossImgRef.current, boss.x, boss.y, boss.width, boss.height);
-      } else {
-        ctx.fillStyle = '#14F195';
-        ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
       }
 
       obstaclesRef.current.forEach(obs => {
@@ -214,7 +219,7 @@ export default function BossGame() {
       </div>
       
       <div className="relative w-full overflow-hidden bg-black rounded-2xl border border-white/10 shadow-2xl">
-        <canvas ref={canvasRef} width={800} height={300} className="w-full h-auto cursor-pointer" style={{ touchAction: 'none' }} />
+        <canvas ref={canvasRef} width={800} height={300} className="w-full h-auto cursor-pointer" />
         
         <button 
           onPointerDown={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }}
@@ -225,7 +230,7 @@ export default function BossGame() {
 
         {!gameStarted && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-[100]">
-            <div className="flex gap-4 mb-6">
+            <div className="flex gap-4 mb-6 relative z-[110]">
               <button onPointerDown={(e) => { e.stopPropagation(); setMode('EASY'); }} className={`px-6 py-2 rounded-xl font-bold ${mode === 'EASY' ? 'bg-[#14F195] text-black' : 'text-white/40'}`}>EASY</button>
               <button onPointerDown={(e) => { e.stopPropagation(); setMode('HARD'); }} className={`px-6 py-2 rounded-xl font-bold ${mode === 'HARD' ? 'bg-red-600 text-white' : 'text-white/40'}`}>HARD</button>
             </div>
@@ -236,14 +241,14 @@ export default function BossGame() {
         {gameOver && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-[120] text-center">
             <h4 className={`text-5xl font-black italic mb-4 ${mode === 'HARD' ? 'text-red-600' : 'text-white'}`}>REKT</h4>
-            <div className="flex gap-4">
+            <div className="flex gap-4 relative z-[130]">
               <button onPointerDown={(e) => { e.stopPropagation(); scoreRef.current = 0; obstaclesRef.current = []; setGameOver(false); setDisplayScore(0); }} className="bg-white text-black px-8 py-3 rounded-lg font-bold">RETRY</button>
               <button onPointerDown={(e) => { e.stopPropagation(); scoreRef.current = 0; obstaclesRef.current = []; setGameOver(false); setGameStarted(false); setDisplayScore(0); }} className="bg-zinc-700 text-white px-8 py-3 rounded-lg font-bold">MENU</button>
             </div>
           </div>
         )}
         
-        <div className="absolute top-4 left-4 bg-black/80 px-4 py-2 rounded-xl border border-white/10 z-10">
+        <div className="absolute top-4 left-4 bg-black/80 px-4 py-2 rounded-xl border border-white/10 z-10 pointer-events-none">
           <span className={`${mode === 'HARD' ? 'text-red-500' : 'text-[#14F195]'} font-mono text-2xl font-bold`}>{displayScore}M</span>
         </div>
       </div>
