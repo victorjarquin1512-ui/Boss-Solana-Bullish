@@ -11,6 +11,7 @@ const phases = [
     items: [
       "Token stealth launch on Solana",
       "Burning 100% of Liquidity",
+      "Game lauched for Mobile & PC",
       "Building 'The Herd' community",
       "DexScreener & Birdeye trending"
     ]
@@ -21,7 +22,7 @@ const phases = [
     status: "upcoming",
     items: [
       "KOL (Influencer) partnerships",
-      "Global meme competitions",
+      "Boss Runner Game Play-to-Earn Competitions",
       "CoinGecko & CoinMarketCap listings",
       "Aggressive X (Twitter) raids"
     ]
@@ -32,7 +33,7 @@ const phases = [
     status: "upcoming",
     items: [
       "Official $BOSS Merch Store",
-      "Exclusive NFT 'Bull Pass' drop",
+      "Boss Meme buliding Competition Campaign",
       "Strategic Solana ecosystem collabs",
       "Major CEX listing push"
     ]
@@ -44,7 +45,7 @@ const phases = [
     items: [
       "Global Bullish billboard campaign",
       "Charity initiatives for wildlife",
-      "Becoming the #1 mascot of Solana",
+      "Becoming the #1 Bull of Solana",
       "Always Solana Season Celebration"
     ]
   }

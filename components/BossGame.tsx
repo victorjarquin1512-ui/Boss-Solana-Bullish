@@ -1,271 +1,283 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 
-type GameMode = 'EASY' | 'HARD';
+// Define explicit types for our game objects to prevent TS errors
+interface Obstacle {
+  type: 'BEAR' | 'CANDLE';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isStanding?: boolean;
+}
 
-export default function BossGame() {
+function BossGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameStarted, setGameStarted] = useState(false);
   const [gameOver, setGameOver] = useState(false);
-  const [displayScore, setDisplayScore] = useState(0);
-  const [mode, setMode] = useState<GameMode>('EASY');
+  const [score, setScore] = useState(0);
+  const [highScore, setHighScore] = useState(0);
+  const [mode, setMode] = useState<'EASY' | 'HARD'>('EASY');
   const [isMuted, setIsMuted] = useState(false);
 
-  // Engine Refs
   const scoreRef = useRef(0);
-  const obstaclesRef = useRef<any[]>([]);
+  const obstaclesRef = useRef<Obstacle[]>([]);
   const bossImgRef = useRef<HTMLImageElement | null>(null);
   const jumpSound = useRef<HTMLAudioElement | null>(null);
   const deathSound = useRef<HTMLAudioElement | null>(null);
   const bgMusic = useRef<HTMLAudioElement | null>(null);
-  
-  // Singleton Loop & Input Control
-  const lastJumpTime = useRef(0);
   const jumpRequested = useRef(false);
   const requestRef = useRef<number | null>(null);
+  
+  const lastTimeRef = useRef(0);
+  const accumulatorRef = useRef(0);
+  const step = 1000 / 60;
 
-  // 1. Initialize Assets
   useEffect(() => {
+    const saved = localStorage.getItem('boss_highscore');
+    if (saved) setHighScore(parseInt(saved));
     const img = new Image();
     img.src = '/boss-icon.png';
     img.onload = () => { bossImgRef.current = img; };
-
     jumpSound.current = new Audio('/jump.mp3');
     deathSound.current = new Audio('/death.mp3');
-    
-    // Setup Background Music
-    const music = new Audio('/bg-music.mp3');
-    music.loop = true;
-    music.preload = 'auto';
-    bgMusic.current = music;
-  }, []);
+    bgMusic.current = new Audio('/bg-music.mp3');
+    if (bgMusic.current) bgMusic.current.loop = true;
 
-  // 2. Audio State Sync
-  useEffect(() => {
-    if (bgMusic.current) {
-      bgMusic.current.volume = isMuted ? 0 : 0.15;
-      if (gameStarted && !gameOver && !isMuted) {
-        bgMusic.current.play().catch(() => {
-          console.log("Audio waiting for user interaction...");
-        });
-      } else {
-        bgMusic.current.pause();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') { 
+        e.preventDefault(); 
+        if (!gameStarted) return;
+        jumpRequested.current = true; 
       }
+    };
+    const handlePointer = (e: PointerEvent) => {
+      if ((e.target as HTMLElement).closest('button')) return;
+      if (!gameStarted) return;
+      jumpRequested.current = true;
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('pointerdown', handlePointer);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('pointerdown', handlePointer);
+    };
+  }, [gameStarted]);
+
+  const triggerVibrate = (pattern: VibratePattern) => {
+    if (typeof window !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(pattern);
     }
-  }, [isMuted, gameStarted, gameOver]);
+  };
 
-  // 3. The "Unlocker" Function
-  const startMission = async () => {
-    // Browsers require audio to be triggered by a direct click event
-    if (bgMusic.current) {
-      try {
-        bgMusic.current.currentTime = 0;
-        await bgMusic.current.play();
-      } catch (err) {
-        console.error("Audio playback failed:", err);
-      }
-    }
-    
-    // Prime sound effects
-    [jumpSound, deathSound].forEach(s => {
-      if (s.current) {
-        s.current.play().then(() => {
-          s.current!.pause();
-          s.current!.currentTime = 0;
-        }).catch(() => {});
-      }
-    });
-
+  const startMission = (selectedMode: 'EASY' | 'HARD') => {
+    setMode(selectedMode);
+    obstaclesRef.current = [];
+    scoreRef.current = 0;
+    setScore(0);
+    setGameOver(false);
     setGameStarted(true);
+    lastTimeRef.current = performance.now();
+    triggerVibrate(50);
   };
 
   useEffect(() => {
-    if (!gameStarted || gameOver) {
-        if (requestRef.current) cancelAnimationFrame(requestRef.current);
-        return;
-    }
-
+    if (!gameStarted || gameOver) return;
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
 
-    let gridOffset = 0;
-    const boss = { 
-      x: 50, y: 150, width: 42, height: 42, 
-      dy: 0, jumpForce: -14.5, gravity: 0.82, grounded: false 
+    const boss = { x: 50, y: 150, width: 44, height: 44, dy: 0, jumpForce: -15.5, gravity: 0.82, grounded: false };
+    let starOffset = 0, planetX = 850, rocket1X = 1000, rocket2X = 1600;
+
+    const drawRealisticRocket = (c: CanvasRenderingContext2D, x: number, y: number, primaryColor: string, secondaryColor: string) => {
+        const flicker = Math.random() * 8;
+        const gradient = c.createLinearGradient(x - 40, y, x, y);
+        gradient.addColorStop(0, 'transparent');
+        gradient.addColorStop(0.5, secondaryColor);
+        gradient.addColorStop(1, 'white');
+        c.fillStyle = gradient;
+        c.beginPath(); c.moveTo(x, y + 2); c.lineTo(x - 30 - flicker, y + 8); c.lineTo(x, y + 14); c.fill();
+
+        c.fillStyle = primaryColor;
+        c.beginPath(); 
+        (c as any).roundRect(x, y, 60, 16, 8); 
+        c.fill();
+        c.fillStyle = '#1e293b';
+        c.beginPath(); c.ellipse(x + 45, y + 8, 8, 4, 0, 0, Math.PI * 2); c.fill();
+        c.fillStyle = primaryColor;
+        c.beginPath(); c.moveTo(x + 5, y); c.lineTo(x - 5, y - 8); c.lineTo(x + 15, y); c.fill();
+        c.beginPath(); c.moveTo(x + 5, y + 16); c.lineTo(x - 5, y + 24); c.lineTo(x + 15, y + 16); c.fill();
     };
 
-    const drawBear = (obs: any) => {
-      const { x, y, width } = obs;
-      const scale = width / 30; 
-      
-      ctx.fillStyle = '#4a2b10'; 
-      ctx.beginPath(); ctx.arc(x + (5 * scale), y + (5 * scale), 8 * scale, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(x + (25 * scale), y + (5 * scale), 8 * scale, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(x + (15 * scale), y + (15 * scale), 15 * scale, 0, Math.PI * 2); ctx.fill();
-      
-      ctx.fillStyle = '#d2b48c'; 
-      ctx.beginPath(); ctx.arc(x + (15 * scale), y + (21 * scale), 7 * scale, 0, Math.PI * 2); ctx.fill();
-      
-      ctx.strokeStyle = '#000'; 
-      ctx.lineWidth = 2 * scale;
-      ctx.beginPath();
-      ctx.moveTo(x + (8 * scale), y + (10 * scale)); ctx.lineTo(x + (12 * scale), y + (14 * scale));
-      ctx.moveTo(x + (12 * scale), y + (10 * scale)); ctx.lineTo(x + (8 * scale), y + (14 * scale));
-      ctx.moveTo(x + (18 * scale), y + (10 * scale)); ctx.lineTo(x + (22 * scale), y + (14 * scale));
-      ctx.moveTo(x + (22 * scale), y + (10 * scale)); ctx.lineTo(x + (18 * scale), y + (14 * scale));
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(x + (15 * scale), y + (25 * scale), 4 * scale, 0, Math.PI, true); 
-      ctx.stroke();
-
-      ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.arc(x + (15 * scale), y + (19 * scale), 2 * scale, 0, Math.PI * 2); ctx.fill();
-    };
-
-    const handleInput = (e: any) => {
-      if (e.cancelable) e.preventDefault();
-      const now = Date.now();
-      if (now - lastJumpTime.current > 150) {
-        jumpRequested.current = true;
-        lastJumpTime.current = now;
+    const drawClaws = (c: CanvasRenderingContext2D, x: number, y: number) => {
+      c.strokeStyle = '#e0e0e0'; c.lineWidth = 1.5;
+      for (let i = -3; i <= 3; i += 3) {
+        c.beginPath(); c.moveTo(x + i, y); c.lineTo(x + i, y + 6); c.stroke();
       }
     };
 
-    window.addEventListener('keydown', (e) => { if (e.code === 'Space') jumpRequested.current = true; });
-    canvas.addEventListener('touchstart', handleInput, { passive: false });
-    canvas.addEventListener('mousedown', handleInput);
+    const drawBear = (c: CanvasRenderingContext2D, obs: Obstacle) => {
+        const { x, y, width, height, isStanding } = obs;
+        c.fillStyle = '#2d1a0a';
+        const walkCycle = Math.sin(Date.now() * 0.01) * 5;
+        
+        if (isStanding) {
+            c.beginPath(); (c as any).roundRect(x + 5, y + 15, width - 10, height - 15, 10); c.fill();
+            c.beginPath(); c.arc(x + width / 2, y + 15, 15, 0, Math.PI * 2); c.fill();
+            c.fillRect(x - 2, y + 20 + walkCycle, 8, 15);
+            c.fillRect(x + width - 6, y + 20 - walkCycle, 8, 15);
+            drawClaws(c, x + 2, y + 35 + walkCycle);
+            drawClaws(c, x + width - 2, y + 35 - walkCycle);
+        } else {
+            c.beginPath(); (c as any).roundRect(x, y + 12, width - 10, height - 12, 10); c.fill();
+            c.beginPath(); c.arc(x + width - 15, y + 15, 14, 0, Math.PI * 2); c.fill();
+            c.fillRect(x + 5, y + 25 + walkCycle, 8, 12);
+            c.fillRect(x + width - 25, y + 25 - walkCycle, 8, 12);
+            drawClaws(c, x + 9, y + 35 + walkCycle);
+            drawClaws(c, x + width - 21, y + 35 - walkCycle);
+        }
+
+        const headX = isStanding ? x + width/2 : x + width - 15;
+        const headY = 12 + y;
+        c.fillStyle = 'red'; c.fillRect(headX - 8, headY, 4, 3); c.fillRect(headX + 4, headY, 4, 3);
+        c.fillStyle = '#1a0d04'; c.beginPath(); c.arc(headX, headY + 8, 4, 0, Math.PI * 2); c.fill();
+        c.fillStyle = '#2d1a0a';
+        if (isStanding) {
+            c.beginPath(); c.arc(x + 10, y + 5, 6, 0, Math.PI * 2); c.fill();
+            c.beginPath(); c.arc(x + width - 10, y + 5, 6, 0, Math.PI * 2); c.fill();
+        } else {
+            c.beginPath(); c.arc(x + width - 22, y + 5, 5, 0, Math.PI * 2); c.fill();
+            c.beginPath(); c.arc(x + width - 8, y + 5, 5, 0, Math.PI * 2); c.fill();
+        }
+    };
 
     const update = () => {
-      if (jumpRequested.current) {
-        if (boss.grounded) {
-          boss.dy = boss.jumpForce;
-          boss.grounded = false;
-          if (jumpSound.current && !isMuted) { jumpSound.current.currentTime = 0; jumpSound.current.play().catch(() => {}); }
-        }
+      if (jumpRequested.current && boss.grounded) {
+        boss.dy = boss.jumpForce; boss.grounded = false;
+        if (jumpSound.current && !isMuted) { jumpSound.current.currentTime = 0; jumpSound.current.play(); }
         jumpRequested.current = false;
       }
-
-      const threshold = mode === 'EASY' ? 80 : 40;
-      const difficultyScore = Math.max(0, scoreRef.current - threshold);
-      const baseSpeed = mode === 'EASY' ? 5.8 : 7.5;
-      const currentSpeed = baseSpeed + (Math.sqrt(difficultyScore) * (mode === 'EASY' ? 0.25 : 0.45));
-      
-      boss.dy += 0.85; 
-      boss.y += boss.dy;
-      if (boss.y + boss.height > canvas.height - 20) {
-        boss.y = canvas.height - 20 - boss.height;
-        boss.dy = 0; boss.grounded = true;
+      boss.dy += boss.gravity; boss.y += boss.dy;
+      if (boss.y + boss.height > canvas.height - 20) { 
+        boss.y = canvas.height - 20 - boss.height; boss.dy = 0; boss.grounded = true; jumpRequested.current = false; 
       }
 
-      const minDistance = mode === 'EASY' ? 290 : 330;
-      const lastObs = obstaclesRef.current[obstaclesRef.current.length - 1];
-      if (!lastObs || (canvas.width - lastObs.x) > minDistance) {
-        const type = Math.random() > 0.4 ? 'candle' : 'bear';
-        obstaclesRef.current.push({ 
-          x: canvas.width, 
-          y: canvas.height - (type === 'candle' ? 70 : 52), 
-          width: 32, height: type === 'candle' ? 50 : 32, 
-          type 
-        });
+      const speed = (mode === 'EASY' ? 6 : 8.5) + (scoreRef.current * 0.05);
+      starOffset -= speed * 0.2; planetX -= speed * 0.1; 
+      rocket1X -= speed * 2.5; rocket2X -= speed * 1.8;
+
+      if (planetX < -200) planetX = canvas.width + 400;
+      if (rocket1X < -200) rocket1X = canvas.width + 900;
+      if (rocket2X < -200) rocket2X = canvas.width + 1300;
+
+      if (obstaclesRef.current.length === 0 || (canvas.width - obstaclesRef.current[obstaclesRef.current.length - 1].x) > 380) {
+        if (Math.random() > 0.45) {
+          const isStanding = Math.random() > 0.5;
+          obstaclesRef.current.push({ type: 'BEAR', x: canvas.width, y: canvas.height - (isStanding ? 85 : 55), width: isStanding ? 45 : 70, height: isStanding ? 65 : 40, isStanding });
+        } else {
+          const candleHeight = 45 + Math.random() * 45; 
+          obstaclesRef.current.push({ type: 'CANDLE', x: canvas.width, y: canvas.height - 20 - candleHeight, width: 22, height: candleHeight });
+        }
       }
 
       for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
-        const obs = obstaclesRef.current[i];
-        obs.x -= currentSpeed;
-        if (boss.x + 8 < obs.x + obs.width && boss.x + boss.width - 8 > obs.x && 
-            boss.y + 8 < obs.y + obs.height && boss.y + boss.height - 8 > obs.y) {
-          if (deathSound.current && !isMuted) deathSound.current.play().catch(() => {});
-          setGameOver(true);
-          return;
+        const obs = obstaclesRef.current[i]; obs.x -= speed;
+        if (boss.x < obs.x + obs.width && boss.x + boss.width > obs.x && boss.y < obs.y + obs.height && boss.y + boss.height > obs.y) {
+          triggerVibrate([100, 50, 100]);
+          if (deathSound.current && !isMuted) deathSound.current.play();
+          if (scoreRef.current > highScore) { setHighScore(scoreRef.current); localStorage.setItem('boss_highscore', scoreRef.current.toString()); }
+          setGameOver(true); return;
         }
-        if (obs.x + obs.width < 0) {
-          obstaclesRef.current.splice(i, 1);
-          scoreRef.current += 1;
-          setDisplayScore(scoreRef.current);
-        }
+        if (obs.x + obs.width < 0) { obstaclesRef.current.splice(i, 1); scoreRef.current++; setScore(scoreRef.current); }
       }
+    };
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      gridOffset = (gridOffset + currentSpeed) % 40;
-      ctx.strokeStyle = 'rgba(20, 241, 149, 0.08)';
-      for (let i = 0; i < canvas.width + 40; i += 40) {
-        ctx.beginPath(); ctx.moveTo(i - gridOffset, 0); ctx.lineTo(i - gridOffset, canvas.height); ctx.stroke();
-      }
-
+    const draw = () => {
+      ctx.fillStyle = '#020012'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'white';
+      for (let i = 0; i < 25; i++) { ctx.fillRect((i * 180 + starOffset) % canvas.width, (i * 90) % canvas.height, 2, 2); }
+      
+      drawRealisticRocket(ctx, rocket1X, 60, '#cbd5e1', '#14F195');
+      drawRealisticRocket(ctx, rocket2X, 150, '#475569', '#9945FF');
+      
+      ctx.fillStyle = '#3a0ca3'; ctx.beginPath(); ctx.arc(planetX, 80, 40, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#4361ee'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(planetX, 80, 75, 15, Math.PI/6, 0, Math.PI*2); ctx.stroke();
+      ctx.strokeStyle = '#14F195'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, canvas.height - 20); ctx.lineTo(canvas.width, canvas.height - 20); ctx.stroke();
+      
       if (bossImgRef.current) ctx.drawImage(bossImgRef.current, boss.x, boss.y, boss.width, boss.height);
 
       obstaclesRef.current.forEach(obs => {
-        if (obs.type === 'candle') {
-          ctx.fillStyle = mode === 'HARD' ? '#ff4d4d' : '#14F195';
+        if (obs.type === 'BEAR') drawBear(ctx, obs);
+        else {
+          ctx.fillStyle = '#ff4d4d'; ctx.shadowBlur = 10; ctx.shadowColor = 'red';
           ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-          ctx.fillRect(obs.x + (obs.width / 2) - 1, obs.y - 10, 2, 10);
-        } else {
-          drawBear(obs);
+          ctx.fillRect(obs.x + obs.width/2 - 1, obs.y - 12, 2, obs.height + 24);
+          ctx.shadowBlur = 0;
         }
       });
-
-      requestRef.current = requestAnimationFrame(update);
     };
 
-    requestRef.current = requestAnimationFrame(update);
-
-    return () => {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
-      canvas.removeEventListener('mousedown', handleInput);
-      canvas.removeEventListener('touchstart', handleInput);
+    const loop = (time: number) => {
+      const delta = time - lastTimeRef.current; lastTimeRef.current = time; accumulatorRef.current += delta;
+      while (accumulatorRef.current >= step) { update(); accumulatorRef.current -= step; }
+      draw();
+      requestRef.current = requestAnimationFrame(loop);
     };
-  }, [gameStarted, gameOver, mode, isMuted]);
+    requestRef.current = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(requestRef.current!);
+  }, [gameStarted, gameOver, mode, isMuted, highScore]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black p-2 md:p-4 select-none touch-none overflow-hidden">
-      
-      <div className="relative w-full max-w-[95vw] md:max-w-4xl aspect-[8/3] bg-black rounded-xl md:rounded-3xl border border-[#14F195]/20 shadow-2xl overflow-hidden">
-        <canvas ref={canvasRef} width={800} height={300} className="w-full h-full object-contain block" />
+    <div className="relative w-full max-w-4xl aspect-[21/9] bg-black rounded-3xl border-2 border-[#14F195]/20 overflow-hidden mx-auto shadow-2xl">
+      <canvas ref={canvasRef} width={800} height={340} className="w-full h-full" />
+      <div className="absolute top-4 left-6 right-6 flex justify-between items-start z-30 pointer-events-none text-white font-black">
+        <div className="font-mono text-2xl text-[#14F195] uppercase drop-shadow-md">{score} LY</div>
+        <button onClick={() => setIsMuted(!isMuted)} className="pointer-events-auto bg-black/60 p-2 rounded-lg border border-white/10 active:scale-90 transition-transform">
+          {isMuted ? '🔇' : '🔊'}
+        </button>
+      </div>
+
+      {!gameStarted && (
+        <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-40 p-6 text-center">
+          <h2 className="text-[#14F195] text-6xl md:text-8xl font-black italic mb-6 tracking-tighter uppercase drop-shadow-[0_0_15px_rgba(20,241,149,0.4)]">$BOSS</h2>
+          <div className="flex gap-4 mb-4">
+            <button onClick={() => startMission('EASY')} className="px-10 py-3 rounded-full font-bold border-2 border-[#14F195] text-[#14F195] active:bg-[#14F195] active:text-black transition-all">EASY</button>
+            <button onClick={() => startMission('HARD')} className="px-10 py-3 rounded-full font-bold border-2 border-red-600 text-red-600 active:bg-red-600 active:text-white transition-all">HARD</button>
+          </div>
+        </div>
+      )}
+
+      {gameOver && (
+        <div className="absolute inset-0 bg-red-900/90 backdrop-blur-md flex flex-col items-center justify-center z-50 p-6 text-center">
+          <h2 className="text-white text-6xl md:text-8xl font-black italic mb-2 uppercase drop-shadow-lg">REKT</h2>
+          <p className="text-white/80 font-mono mb-8 uppercase tracking-widest text-sm">Final Score: {score} LY</p>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <button onClick={() => startMission('EASY')} className="px-12 py-3 bg-white text-black font-black rounded-full uppercase active:scale-95 transition-transform hover:bg-[#14F195]">Easy Retry</button>
+            <button onClick={() => startMission('HARD')} className="px-12 py-3 bg-black text-white font-black border-2 border-white rounded-full uppercase active:scale-95 transition-transform hover:bg-red-600 hover:border-red-600">Hard Retry</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <main className="min-h-screen bg-[#020202] text-white p-6">
+      <div className="max-w-6xl mx-auto text-center py-10">
+        <h1 className="text-8xl md:text-9xl font-black italic mb-2 tracking-tighter text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.1)]">$BOSS</h1>
+        <p className="text-[#14F195] font-mono tracking-[0.4em] mb-12 uppercase text-sm font-bold opacity-80">Official Solana Bull Spirit</p>
         
-        <div className="absolute top-3 left-3 md:top-6 md:left-6 z-50 bg-black/80 px-4 py-1 rounded-xl border border-white/10 font-mono text-xl md:text-3xl text-[#14F195]">
-          {displayScore}M
+        {/* NEW TITLE SECTION */}
+        <div className="mt-16 mb-8">
+            <h2 className="text-4xl font-black text-white italic tracking-tight uppercase">Boss Runner Game</h2>
+            <div className="h-1 w-24 bg-[#14F195] mx-auto mt-2 rounded-full shadow-[0_0_10px_#14F195]"></div>
         </div>
 
-        <button onClick={() => setIsMuted(!isMuted)} className="absolute top-3 right-3 z-[250] bg-black/60 p-2 rounded-lg border border-white/10 text-white text-xs">
-          {isMuted ? "🔇" : "🔊"}
-        </button>
-
-        {!gameStarted && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-[200] p-6">
-            <h2 className="text-white text-2xl md:text-4xl font-black italic mb-6 uppercase tracking-tighter">JOIN THE MISSION</h2>
-            <div className="flex gap-4 mb-8 z-[210]">
-              <button onClick={() => setMode('EASY')} className={`px-6 py-3 md:px-12 md:py-4 rounded-xl font-black border-2 transition-all ${mode === 'EASY' ? 'bg-[#14F195] text-black border-[#14F195]' : 'text-white border-white/20'}`}>EASY</button>
-              <button onClick={() => setMode('HARD')} className={`px-6 py-3 md:px-12 md:py-4 rounded-xl font-black border-2 transition-all ${mode === 'HARD' ? 'bg-red-600 text-white border-red-600' : 'text-white border-white/20'}`}>HARD</button>
-            </div>
-            <button onClick={startMission} className="px-12 py-4 md:px-20 md:py-6 rounded-2xl bg-white text-black font-black text-xl md:text-3xl hover:bg-[#14F195] active:scale-95 shadow-xl transition-all">START</button>
-          </div>
-        )}
-
-        {gameOver && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/95 z-[220] p-6">
-            <h4 className="text-red-600 text-6xl md:text-8xl font-black italic mb-8 uppercase tracking-tighter">REKT</h4>
-            <div className="flex gap-4 z-[230]">
-                <button onClick={() => { scoreRef.current = 0; obstaclesRef.current = []; setGameOver(false); setDisplayScore(0); }} className="bg-[#14F195] px-8 py-4 md:px-12 md:py-5 rounded-2xl font-black text-black text-lg md:text-xl active:scale-95 transition-all">RETRY</button>
-                <button onClick={() => { scoreRef.current = 0; obstaclesRef.current = []; setGameOver(false); setGameStarted(false); setDisplayScore(0); }} className="bg-white px-8 py-4 md:px-12 md:py-5 rounded-2xl font-black text-black text-lg md:text-xl active:scale-95 transition-all">MENU</button>
-            </div>
-          </div>
-        )}
+        <BossGame />
       </div>
-
-      <div className="fixed bottom-6 right-6 z-[300]">
-        <a 
-          href="https://t.me/Boss_Solana_Bull_Official" 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          className="bg-[#229ED9] p-4 rounded-full text-white shadow-[0_0_20px_rgba(34,158,217,0.5)] border border-white/20 hover:scale-110 active:scale-90 transition-all flex items-center justify-center"
-        >
-           <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0C5.352 0 0 5.352 0 11.944c0 6.592 5.352 11.944 11.944 11.944 6.592 0 11.944-5.552 11.944-11.944C23.888 5.352 18.536 0 11.944 0zm5.859 8.125c-.19.982-1.802 8.657-2.618 13.064-.347 1.861-1.033 1.956-1.697 1.956-1.444 0-2.534-1.066-3.931-1.983-2.185-1.436-3.419-2.329-5.541-3.725-2.454-1.613-.863-2.5 0-3.812.226-.341 4.14-3.793 4.215-4.11.01-.038.018-.182-.072-.26-.09-.079-.222-.053-.318-.032-.136.03-2.306 1.464-6.505 4.305-.615.422-1.171.628-1.668.617-.548-.012-1.603-.31-2.387-.565-.963-.313-1.728-.479-1.662-1.011.034-.277.416-.561 1.144-.852 4.478-1.951 7.462-3.238 8.953-3.86 4.256-1.775 5.141-2.083 5.717-2.093.126-.002.41.029.593.178.154.125.197.294.212.414.015.12.033.473.018.847z"/></svg>
-        </a>
-      </div>
-    </div>
+    </main>
   );
 }

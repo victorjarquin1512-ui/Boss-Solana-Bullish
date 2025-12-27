@@ -68,7 +68,7 @@ export default function AboutBoss() {
           </div>
 
           <div className="bg-zinc-900/30 p-6 rounded-xl border-l-4 border-[#14F195] text-white italic">
-            &quot;$BOSS is here to spread good vibes and become the ultimate ambassador to the Solana ecosystem.&quot;
+            &quot;$BOSS is here to spread good vibes and become the official bull to the Solana ecosystem.&quot;
           </div>
         </div>
       </div>

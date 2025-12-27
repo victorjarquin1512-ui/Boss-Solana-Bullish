@@ -14,7 +14,8 @@ const galleryImages = [
   { src: '/boss-jet.jpg', alt: 'Boss Solana Jet' },
   { src: '/boss-pool-drink.jpg', alt: 'Boss Solana Pool' },
   { src: '/boss-soldier.jpg', alt: 'Boss Solana Soldier' },
-  { src: '/boss-jet.jpg', alt: 'Boss Solana Jet' },
+  { src: '/boss-moon-rocket.jpg', alt: 'Boss Solana Moon' },
+  { src: '/boss-morning-coffee.jpg', alt: 'Boss Solana Coffee' },
   { src: '/boss-santa.jpg', alt: 'Boss Solana Santa' },
 ];
 
