@@ -1,7 +1,6 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 
-// Define explicit types for our game objects to prevent TS errors
 interface Obstacle {
   type: 'BEAR' | 'CANDLE';
   x: number;
@@ -39,10 +38,15 @@ function BossGame() {
     const img = new Image();
     img.src = '/boss-icon.png';
     img.onload = () => { bossImgRef.current = img; };
+    
     jumpSound.current = new Audio('/jump.mp3');
     deathSound.current = new Audio('/death.mp3');
     bgMusic.current = new Audio('/bg-music.mp3');
-    if (bgMusic.current) bgMusic.current.loop = true;
+    
+    if (bgMusic.current) {
+      bgMusic.current.loop = true;
+      bgMusic.current.volume = 1.0; 
+    }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') { 
@@ -65,6 +69,12 @@ function BossGame() {
     };
   }, [gameStarted]);
 
+  useEffect(() => {
+    if (bgMusic.current) {
+      bgMusic.current.muted = isMuted;
+    }
+  }, [isMuted]);
+
   const triggerVibrate = (pattern: VibratePattern) => {
     if (typeof window !== 'undefined' && navigator.vibrate) {
       navigator.vibrate(pattern);
@@ -80,6 +90,10 @@ function BossGame() {
     setGameStarted(true);
     lastTimeRef.current = performance.now();
     triggerVibrate(50);
+
+    if (bgMusic.current && !isMuted) {
+      bgMusic.current.play().catch(() => {});
+    }
   };
 
   useEffect(() => {
@@ -91,31 +105,26 @@ function BossGame() {
     const boss = { x: 50, y: 150, width: 44, height: 44, dy: 0, jumpForce: -15.5, gravity: 0.82, grounded: false };
     let starOffset = 0, planetX = 850, rocket1X = 1000, rocket2X = 1600;
 
-    const drawRealisticRocket = (c: CanvasRenderingContext2D, x: number, y: number, primaryColor: string, secondaryColor: string) => {
+    const drawRealisticRocket = (c: CanvasRenderingContext2D, x: number, y: number, pCol: string, sCol: string) => {
         const flicker = Math.random() * 8;
         const gradient = c.createLinearGradient(x - 40, y, x, y);
         gradient.addColorStop(0, 'transparent');
-        gradient.addColorStop(0.5, secondaryColor);
+        gradient.addColorStop(0.5, sCol);
         gradient.addColorStop(1, 'white');
         c.fillStyle = gradient;
         c.beginPath(); c.moveTo(x, y + 2); c.lineTo(x - 30 - flicker, y + 8); c.lineTo(x, y + 14); c.fill();
-
-        c.fillStyle = primaryColor;
-        c.beginPath(); 
-        (c as any).roundRect(x, y, 60, 16, 8); 
-        c.fill();
+        c.fillStyle = pCol;
+        c.beginPath(); (c as any).roundRect(x, y, 60, 16, 8); c.fill();
         c.fillStyle = '#1e293b';
         c.beginPath(); c.ellipse(x + 45, y + 8, 8, 4, 0, 0, Math.PI * 2); c.fill();
-        c.fillStyle = primaryColor;
-        c.beginPath(); c.moveTo(x + 5, y); c.lineTo(x - 5, y - 8); c.lineTo(x + 15, y); c.fill();
-        c.beginPath(); c.moveTo(x + 5, y + 16); c.lineTo(x - 5, y + 24); c.lineTo(x + 15, y + 16); c.fill();
     };
 
+    // RESTORED: Claw Drawing Logic
     const drawClaws = (c: CanvasRenderingContext2D, x: number, y: number) => {
-      c.strokeStyle = '#e0e0e0'; c.lineWidth = 1.5;
-      for (let i = -3; i <= 3; i += 3) {
-        c.beginPath(); c.moveTo(x + i, y); c.lineTo(x + i, y + 6); c.stroke();
-      }
+        c.strokeStyle = '#e0e0e0'; c.lineWidth = 1.5;
+        for (let i = -3; i <= 3; i += 3) {
+            c.beginPath(); c.moveTo(x + i, y); c.lineTo(x + i, y + 6); c.stroke();
+        }
     };
 
     const drawBear = (c: CanvasRenderingContext2D, obs: Obstacle) => {
@@ -123,26 +132,33 @@ function BossGame() {
         c.fillStyle = '#2d1a0a';
         const walkCycle = Math.sin(Date.now() * 0.01) * 5;
         
+        // Body & Legs
         if (isStanding) {
             c.beginPath(); (c as any).roundRect(x + 5, y + 15, width - 10, height - 15, 10); c.fill();
-            c.beginPath(); c.arc(x + width / 2, y + 15, 15, 0, Math.PI * 2); c.fill();
-            c.fillRect(x - 2, y + 20 + walkCycle, 8, 15);
-            c.fillRect(x + width - 6, y + 20 - walkCycle, 8, 15);
+            c.beginPath(); c.arc(x + width / 2, y + 15, 15, 0, Math.PI * 2); c.fill(); // Head
+            c.fillRect(x - 2, y + 20 + walkCycle, 8, 15); // Left Leg
+            c.fillRect(x + width - 6, y + 20 - walkCycle, 8, 15); // Right Leg
             drawClaws(c, x + 2, y + 35 + walkCycle);
             drawClaws(c, x + width - 2, y + 35 - walkCycle);
         } else {
             c.beginPath(); (c as any).roundRect(x, y + 12, width - 10, height - 12, 10); c.fill();
-            c.beginPath(); c.arc(x + width - 15, y + 15, 14, 0, Math.PI * 2); c.fill();
+            c.beginPath(); c.arc(x + width - 15, y + 15, 14, 0, Math.PI * 2); c.fill(); // Head
             c.fillRect(x + 5, y + 25 + walkCycle, 8, 12);
             c.fillRect(x + width - 25, y + 25 - walkCycle, 8, 12);
             drawClaws(c, x + 9, y + 35 + walkCycle);
             drawClaws(c, x + width - 21, y + 35 - walkCycle);
         }
 
+        // RESTORED: Angry Face (Eyes & Nose)
         const headX = isStanding ? x + width/2 : x + width - 15;
         const headY = 12 + y;
-        c.fillStyle = 'red'; c.fillRect(headX - 8, headY, 4, 3); c.fillRect(headX + 4, headY, 4, 3);
-        c.fillStyle = '#1a0d04'; c.beginPath(); c.arc(headX, headY + 8, 4, 0, Math.PI * 2); c.fill();
+        c.fillStyle = 'red'; // Angry Glowing Eyes
+        c.fillRect(headX - 8, headY, 4, 3); 
+        c.fillRect(headX + 4, headY, 4, 3);
+        c.fillStyle = '#1a0d04'; // Nose
+        c.beginPath(); c.arc(headX, headY + 8, 4, 0, Math.PI * 2); c.fill();
+        
+        // Ears
         c.fillStyle = '#2d1a0a';
         if (isStanding) {
             c.beginPath(); c.arc(x + 10, y + 5, 6, 0, Math.PI * 2); c.fill();
@@ -198,16 +214,12 @@ function BossGame() {
       ctx.fillStyle = '#020012'; ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = 'white';
       for (let i = 0; i < 25; i++) { ctx.fillRect((i * 180 + starOffset) % canvas.width, (i * 90) % canvas.height, 2, 2); }
-      
       drawRealisticRocket(ctx, rocket1X, 60, '#cbd5e1', '#14F195');
       drawRealisticRocket(ctx, rocket2X, 150, '#475569', '#9945FF');
-      
       ctx.fillStyle = '#3a0ca3'; ctx.beginPath(); ctx.arc(planetX, 80, 40, 0, Math.PI*2); ctx.fill();
       ctx.strokeStyle = '#4361ee'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(planetX, 80, 75, 15, Math.PI/6, 0, Math.PI*2); ctx.stroke();
       ctx.strokeStyle = '#14F195'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, canvas.height - 20); ctx.lineTo(canvas.width, canvas.height - 20); ctx.stroke();
-      
       if (bossImgRef.current) ctx.drawImage(bossImgRef.current, boss.x, boss.y, boss.width, boss.height);
-
       obstaclesRef.current.forEach(obs => {
         if (obs.type === 'BEAR') drawBear(ctx, obs);
         else {
@@ -252,7 +264,6 @@ function BossGame() {
       {gameOver && (
         <div className="absolute inset-0 bg-red-900/90 backdrop-blur-md flex flex-col items-center justify-center z-50 p-6 text-center">
           <h2 className="text-white text-6xl md:text-8xl font-black italic mb-2 uppercase drop-shadow-lg">REKT</h2>
-          <p className="text-white/80 font-mono mb-8 uppercase tracking-widest text-sm">Final Score: {score} LY</p>
           <div className="flex flex-col sm:flex-row gap-4">
             <button onClick={() => startMission('EASY')} className="px-12 py-3 bg-white text-black font-black rounded-full uppercase active:scale-95 transition-transform hover:bg-[#14F195]">Easy Retry</button>
             <button onClick={() => startMission('HARD')} className="px-12 py-3 bg-black text-white font-black border-2 border-white rounded-full uppercase active:scale-95 transition-transform hover:bg-red-600 hover:border-red-600">Hard Retry</button>
@@ -269,13 +280,10 @@ export default function Page() {
       <div className="max-w-6xl mx-auto text-center py-10">
         <h1 className="text-8xl md:text-9xl font-black italic mb-2 tracking-tighter text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.1)]">$BOSS</h1>
         <p className="text-[#14F195] font-mono tracking-[0.4em] mb-12 uppercase text-sm font-bold opacity-80">Official Solana Bull Spirit</p>
-        
-        {/* NEW TITLE SECTION */}
         <div className="mt-16 mb-8">
             <h2 className="text-4xl font-black text-white italic tracking-tight uppercase">Boss Runner Game</h2>
             <div className="h-1 w-24 bg-[#14F195] mx-auto mt-2 rounded-full shadow-[0_0_10px_#14F195]"></div>
         </div>
-
         <BossGame />
       </div>
     </main>
