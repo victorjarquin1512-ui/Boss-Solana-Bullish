@@ -38,7 +38,6 @@ function BossGame() {
   const rocket2Ref = useRef({ x: 1600, y: 170 });
   const solanaLogoXRef = useRef(850);
 
-  // 1. Initial Asset Loading
   useEffect(() => {
     const saved = localStorage.getItem('boss_highscore');
     if (saved) setHighScore(parseInt(saved));
@@ -72,7 +71,6 @@ function BossGame() {
     };
   }, []);
 
-  // 2. Audio Kill-Switch
   useEffect(() => {
     if (gameOver && bgMusic.current) {
       bgMusic.current.pause();
@@ -117,14 +115,12 @@ function BossGame() {
     }
   };
 
-  // 3. Game Engine
   useEffect(() => {
     if (!gameStarted || gameOver) return;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
 
-    // --- HARD MODE TWEAKED FOR FAIRNESS ---
     const boss = { 
       x: 70, 
       y: 200, 
@@ -149,23 +145,77 @@ function BossGame() {
 
     const drawBear = (c: CanvasRenderingContext2D, obs: Obstacle) => {
         const { x, y, width, height, scale } = obs;
-        const walk = Math.sin(Date.now() * 0.012) * 12;
+        const walk = Math.sin(Date.now() * 0.015) * 10;
+        const angerPulse = Math.abs(Math.sin(Date.now() * 0.01)) * 5;
+
         c.save();
         c.translate(x + (width * scale) / 2, y + (height * scale));
         c.scale(scale, scale);
         c.translate(-width / 2, -height);
-        c.fillStyle = '#1a0d04'; c.fillRect(5, height - 12 + walk, 12, 12); c.fillRect(width - 15, height - 12 - walk, 12, 12);
-        c.fillStyle = '#3d2416'; c.beginPath(); c.moveTo(5, 25); c.quadraticCurveTo(width/2, 0, width-5, 25); c.lineTo(width, height - 10); c.lineTo(0, height - 10); c.fill();
-        c.fillStyle = '#8d6e63'; c.beginPath(); c.ellipse(width/2, height - 25, 12, 18, 0, 0, Math.PI * 2); c.fill();
-        c.strokeStyle = '#3d2416'; c.lineWidth = 7; c.lineCap = 'round';
-        c.beginPath(); c.moveTo(10, 25); c.lineTo(-8, 35 + walk); c.stroke();
-        c.beginPath(); c.moveTo(width - 10, 25); c.lineTo(width + 8, 35 - walk); c.stroke();
-        c.fillStyle = 'white'; c.fillRect(-11, 38 + walk, 2, 6); c.fillRect(width + 9, 36 - walk, 2, 6);
-        c.fillStyle = '#3d2416'; c.beginPath(); c.arc(width/2 - 10, 8, 6, 0, Math.PI * 2); c.fill(); c.beginPath(); c.arc(width/2 + 10, 8, 6, 0, Math.PI * 2); c.fill(); c.beginPath(); c.arc(width/2, 18, 16, 0, Math.PI * 2); c.fill();
-        c.fillStyle = '#a1887f'; c.beginPath(); c.ellipse(width/2, 26, 9, 7, 0, 0, Math.PI * 2); c.fill();
-        c.fillStyle = '#000'; c.beginPath(); c.ellipse(width/2, 28, 5, 3 + Math.abs(walk/4), 0, 0, Math.PI * 2); c.fill();
-        c.fillStyle = '#fff'; c.fillRect(width/2 - 3, 27, 2, 2); c.fillRect(width/2 + 1, 27, 2, 2);
-        c.fillStyle = 'red'; c.fillRect(width/2 - 8, 12, 4, 2); c.fillRect(width/2 + 4, 12, 4, 2);
+
+        // LEGS & FEET
+        c.fillStyle = '#1a0d04';
+        c.fillRect(6, height - 18 + walk, 14, 18); // Left Leg
+        c.fillRect(width - 20, height - 18 - walk, 14, 18); // Right Leg
+        
+        // CLAWS ON FEET
+        c.fillStyle = '#ffffff';
+        for(let i=0; i<3; i++) {
+            c.fillRect(6 + (i*5), height - 2 + walk, 2, 5);
+            c.fillRect(width - 20 + (i*5), height - 2 - walk, 2, 5);
+        }
+
+        // TORSO
+        c.fillStyle = '#2d1a0e';
+        c.beginPath();
+        c.moveTo(2, 30);
+        c.quadraticCurveTo(width/2, 0, width-2, 30);
+        c.lineTo(width+4, height - 12);
+        c.lineTo(-4, height - 12);
+        c.fill();
+
+        // SHARP ARMS WITH CLAWS
+        c.strokeStyle = '#1a0d04';
+        c.lineWidth = 9;
+        c.lineCap = 'round';
+        // Left Arm
+        c.beginPath(); c.moveTo(8, 35); c.lineTo(-12, 45 + walk); c.stroke();
+        c.fillStyle = '#fff'; c.fillRect(-15, 43 + walk, 6, 2); c.fillRect(-15, 47 + walk, 6, 2);
+        // Right Arm
+        c.beginPath(); c.moveTo(width - 8, 35); c.lineTo(width + 12, 45 - walk); c.stroke();
+        c.fillStyle = '#fff'; c.fillRect(width + 10, 43 - walk, 6, 2); c.fillRect(width + 10, 47 - walk, 6, 2);
+
+        // HEAD
+        c.fillStyle = '#2d1a0e';
+        c.beginPath(); c.arc(width/2 - 12, 8, 7, 0, Math.PI * 2); c.fill(); // Left Ear
+        c.beginPath(); c.arc(width/2 + 12, 8, 7, 0, Math.PI * 2); c.fill(); // Right Ear
+        c.beginPath(); c.arc(width/2, 20, 18, 0, Math.PI * 2); c.fill(); // Main Head
+
+        // MEAN FACE
+        // Glow effect for eyes
+        ctx.shadowBlur = angerPulse;
+        ctx.shadowColor = 'red';
+        c.fillStyle = '#ff0000';
+        // Slanted Angry Eyebrows
+        c.strokeStyle = '#000'; c.lineWidth = 3;
+        c.beginPath(); c.moveTo(width/2 - 12, 12); c.lineTo(width/2 - 4, 16); c.stroke();
+        c.beginPath(); c.moveTo(width/2 + 12, 12); c.lineTo(width/2 + 4, 16); c.stroke();
+        // Eyes
+        c.fillRect(width/2 - 10, 16, 5, 3);
+        c.fillRect(width/2 + 5, 16, 5, 3);
+        ctx.shadowBlur = 0;
+
+        // Snout & Mouth
+        c.fillStyle = '#1a0d04';
+        c.beginPath(); c.ellipse(width/2, 28, 10, 8, 0, 0, Math.PI * 2); c.fill();
+        // Gaping Mouth
+        c.fillStyle = '#000';
+        c.beginPath(); c.arc(width/2, 31, 4, 0, Math.PI); c.fill();
+        // Teeth
+        c.fillStyle = '#fff';
+        c.beginPath(); c.moveTo(width/2-3, 31); c.lineTo(width/2-2, 34); c.lineTo(width/2-1, 31); c.fill();
+        c.beginPath(); c.moveTo(width/2+1, 31); c.lineTo(width/2+2, 34); c.lineTo(width/2+3, 31); c.fill();
+
         c.restore();
     };
 
@@ -177,7 +227,6 @@ function BossGame() {
       boss.dy += boss.gravity; boss.y += boss.dy;
       if (boss.y + boss.height > canvas.height - 25) { boss.y = canvas.height - 25 - boss.height; boss.dy = 0; boss.grounded = true; }
 
-      // --- HARD MODE SPEED: Fast but Reactable ---
       const baseSpeed = mode === 'EASY' ? 6.2 : 8.5;
       const speedScale = mode === 'HARD' ? 0.04 : 0.035;
       const speed = baseSpeed + (scoreRef.current * speedScale);
@@ -196,7 +245,6 @@ function BossGame() {
         if (p.x + p.size * 2 < 0) { p.x = canvas.width + 200; p.y = 20 + Math.random() * 140; }
       });
 
-      // --- HARD MODE GAP: 360px is the sweet spot for back-to-back jumps ---
       const minGap = mode === 'HARD' ? 360 : 380;
       if (obstaclesRef.current.length === 0 || (canvas.width - obstaclesRef.current[obstaclesRef.current.length - 1].x) > minGap) {
           if (Math.random() > 0.5) {
@@ -210,8 +258,6 @@ function BossGame() {
       for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
         const obs = obstaclesRef.current[i]; obs.x -= speed;
         const vW = obs.width * obs.scale, vH = obs.height * obs.scale;
-        
-        // Slightly tighter hitboxes for hard mode to reward skill
         const padding = mode === 'HARD' ? 12 : 14;
 
         if (boss.x + padding < obs.x + vW && boss.x + boss.width - padding > obs.x && boss.y + 10 < obs.y + vH && boss.y + boss.height - 10 > obs.y) {
