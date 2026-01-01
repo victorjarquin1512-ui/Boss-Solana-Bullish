@@ -67,17 +67,16 @@ function BossGame() {
     return () => {
         if (bgMusic.current) {
             bgMusic.current.pause();
-            bgMusic.current.src = ""; // Clear memory
+            bgMusic.current.src = ""; 
         }
     };
   }, []);
 
-  // 2. ABSOLUTE AUDIO KILL-SWITCH
+  // 2. Audio Kill-Switch
   useEffect(() => {
     if (gameOver && bgMusic.current) {
       bgMusic.current.pause();
       bgMusic.current.currentTime = 0;
-      bgMusic.current.volume = 0; // Backup
     }
   }, [gameOver]);
 
@@ -89,7 +88,6 @@ function BossGame() {
   }, [isMuted]);
 
   const handleDeath = () => {
-    // Immediate pause
     if (bgMusic.current) {
         bgMusic.current.pause();
         bgMusic.current.currentTime = 0;
@@ -126,7 +124,18 @@ function BossGame() {
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
 
-    const boss = { x: 70, y: 200, width: 46, height: 46, dy: 0, jumpForce: -15, gravity: 0.7, grounded: false };
+    // --- HARD MODE TWEAKED FOR FAIRNESS ---
+    const boss = { 
+      x: 70, 
+      y: 200, 
+      width: 46, 
+      height: 46, 
+      dy: 0, 
+      jumpForce: mode === 'HARD' ? -15.5 : -15, 
+      gravity: mode === 'HARD' ? 0.8 : 0.7, 
+      grounded: false 
+    };
+
     let starOffset = 0;
 
     const drawRocket = (c: CanvasRenderingContext2D, x: number, y: number, pCol: string, sCol: string) => {
@@ -168,8 +177,10 @@ function BossGame() {
       boss.dy += boss.gravity; boss.y += boss.dy;
       if (boss.y + boss.height > canvas.height - 25) { boss.y = canvas.height - 25 - boss.height; boss.dy = 0; boss.grounded = true; }
 
-      const baseSpeed = mode === 'EASY' ? 6.2 : 8.0;
-      const speed = baseSpeed + (scoreRef.current * 0.035);
+      // --- HARD MODE SPEED: Fast but Reactable ---
+      const baseSpeed = mode === 'EASY' ? 6.2 : 8.5;
+      const speedScale = mode === 'HARD' ? 0.04 : 0.035;
+      const speed = baseSpeed + (scoreRef.current * speedScale);
       
       starOffset -= speed * 0.2; 
       solanaLogoXRef.current -= speed * 0.15;
@@ -185,7 +196,8 @@ function BossGame() {
         if (p.x + p.size * 2 < 0) { p.x = canvas.width + 200; p.y = 20 + Math.random() * 140; }
       });
 
-      const minGap = mode === 'HARD' ? 480 : 380;
+      // --- HARD MODE GAP: 360px is the sweet spot for back-to-back jumps ---
+      const minGap = mode === 'HARD' ? 360 : 380;
       if (obstaclesRef.current.length === 0 || (canvas.width - obstaclesRef.current[obstaclesRef.current.length - 1].x) > minGap) {
           if (Math.random() > 0.5) {
             obstaclesRef.current.push({ type: 'BEAR', x: canvas.width, y: canvas.height - 110, width: 60, height: 85, scale: 0.6 + Math.random() * 0.7 });
@@ -198,7 +210,11 @@ function BossGame() {
       for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
         const obs = obstaclesRef.current[i]; obs.x -= speed;
         const vW = obs.width * obs.scale, vH = obs.height * obs.scale;
-        if (boss.x + 14 < obs.x + vW && boss.x + boss.width - 14 > obs.x && boss.y + 10 < obs.y + vH && boss.y + boss.height - 10 > obs.y) {
+        
+        // Slightly tighter hitboxes for hard mode to reward skill
+        const padding = mode === 'HARD' ? 12 : 14;
+
+        if (boss.x + padding < obs.x + vW && boss.x + boss.width - padding > obs.x && boss.y + 10 < obs.y + vH && boss.y + boss.height - 10 > obs.y) {
           handleDeath(); return;
         }
         if (obs.x + vW < 0) { obstaclesRef.current.splice(i, 1); scoreRef.current++; setScore(scoreRef.current); }
@@ -230,7 +246,15 @@ function BossGame() {
       ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, canvas.height - 25); ctx.lineTo(canvas.width, canvas.height - 25); ctx.stroke(); ctx.shadowBlur = 0;
 
       if (bossImgRef.current) ctx.drawImage(bossImgRef.current, boss.x, boss.y, boss.width, boss.height);
-      obstaclesRef.current.forEach(obs => { if (obs.type === 'BEAR') drawBear(ctx, obs); else { ctx.fillStyle = '#ff4d4d'; ctx.shadowBlur = 15; ctx.shadowColor = 'red'; ctx.fillRect(obs.x, obs.y + 5, obs.width, obs.height - 5); ctx.fillRect(obs.x + obs.width/2 - 1, obs.y - 10, 2, obs.height + 20); ctx.shadowBlur = 0; } });
+      obstaclesRef.current.forEach(obs => { 
+        if (obs.type === 'BEAR') drawBear(ctx, obs); 
+        else { 
+          ctx.fillStyle = '#ff4d4d'; ctx.shadowBlur = 15; ctx.shadowColor = 'red'; 
+          ctx.fillRect(obs.x, obs.y + 5, obs.width, obs.height - 5); 
+          ctx.fillRect(obs.x + obs.width/2 - 1, obs.y - 10, 2, obs.height + 20); 
+          ctx.shadowBlur = 0; 
+        } 
+      });
     };
 
     const loop = (time: number) => {
